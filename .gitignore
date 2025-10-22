@@ -1,0 +1,13 @@
+ai-data-cleaner/logs/
+ai-data-cleaner/processed_data/
+ai-data-cleaner/snapshots/
+ai-data-cleaner/uploads/
+.env
+
+
+__pycache__/
+*.pyc
+*.pyo
+*.DS_Store
+.vscode/
+.idea/s
