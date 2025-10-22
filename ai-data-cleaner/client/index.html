@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Data Cleaner</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <h1><i class="fas fa-robot"></i> AI Data Cleaner</h1>
+                <p>Intelligent data preprocessing powered by AI agents</p>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Upload Section -->
+            <section id="upload-section" class="section active">
+                <div class="card">
+                    <h2><i class="fas fa-upload"></i> Upload Dataset</h2>
+                    <p>Upload your CSV, JSON, or Parquet file for AI-powered cleaning and preprocessing.</p>
+                    
+                    <div class="upload-area" id="upload-area">
+                        <div class="upload-content">
+                            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                            <h3>Drop your file here or click to browse</h3>
+                            <p>Supports: CSV, JSON, Parquet (Max: 1GB)</p>
+                            <input type="file" id="file-input" accept=".csv,.json,.parquet" hidden>
+                            <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+                                <i class="fas fa-folder-open"></i> Choose File
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="file-info" class="file-info hidden">
+                        <div class="file-details">
+                            <i class="fas fa-file"></i>
+                            <div class="file-text">
+                                <h4 id="file-name"></h4>
+                                <p id="file-size"></p>
+                            </div>
+                            <button class="btn btn-danger" id="remove-file">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <button class="btn btn-success btn-large" id="start-processing">
+                            <i class="fas fa-play"></i> Start AI Processing
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Processing Section -->
+            <section id="processing-section" class="section">
+                <div class="card">
+                    <h2><i class="fas fa-cogs"></i> Processing Dataset</h2>
+                    
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span id="progress-percent">0%</span>
+                            <span id="progress-message">Initializing...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="processing-steps" id="processing-steps">
+                        <!-- Steps will be added dynamically -->
+                    </div>
+                    
+                    <div class="processing-details" id="processing-details">
+                        <h3>Processing Details</h3>
+                        <div class="log-container" id="log-container">
+                            <!-- Log messages will be added here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section id="results-section" class="section">
+                <div class="card">
+                    <h2><i class="fas fa-check-circle"></i> Processing Complete!</h2>
+                    
+                    <div class="results-summary">
+                        <div class="result-item">
+                            <i class="fas fa-database"></i>
+                            <div>
+                                <h4>Cleaned Dataset</h4>
+                                <p id="output-file">Ready for download</p>
+                            </div>
+                            <button class="btn btn-primary" id="download-dataset">
+                                <i class="fas fa-download"></i> Download
+                            </button>
+                        </div>
+                        
+                        <div class="result-item">
+                            <i class="fas fa-chart-line"></i>
+                            <div>
+                                <h4>Analysis Report</h4>
+                                <p>Comprehensive data quality report</p>
+                            </div>
+                            <button class="btn btn-secondary" id="download-report">
+                                <i class="fas fa-download"></i> Download
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" id="process-another">
+                            <i class="fas fa-plus"></i> Process Another File
+                        </button>
+                        <button class="btn btn-outline" id="view-report">
+                            <i class="fas fa-eye"></i> View Report
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Error Section -->
+            <section id="error-section" class="section">
+                <div class="card error-card">
+                    <h2><i class="fas fa-exclamation-triangle"></i> Processing Error</h2>
+                    <div class="error-message" id="error-message">
+                        <!-- Error message will be displayed here -->
+                    </div>
+                    <button class="btn btn-primary" id="retry-processing">
+                        <i class="fas fa-redo"></i> Try Again
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>&copy; 2024 AI Data Cleaner. Powered by AI agents and modern data processing.</p>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Processing...</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
