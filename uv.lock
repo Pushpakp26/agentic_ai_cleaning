@@ -28,6 +28,7 @@ name = "data-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "dbldatagen" },
     { name = "nltk" },
     { name = "scikit-learn" },
     { name = "uvicorn" },
@@ -35,9 +36,19 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dbldatagen", specifier = ">=0.4.0.post1" },
     { name = "nltk", specifier = ">=3.9.2" },
     { name = "scikit-learn", specifier = ">=1.7.2" },
     { name = "uvicorn", specifier = ">=0.38.0" },
+]
+
+[[package]]
+name = "dbldatagen"
+version = "0.4.0.post1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/b7/32bd9978910e64ed3452743c4d0d1e7192f34fa9b3ea28d29ce299afcab2/dbldatagen-0.4.0.post1.tar.gz", hash = "sha256:a254fba2a6384c75e2dfb38b1e8cdc1c52b417c59fd6ec977e11175ad7567f34", size = 108377, upload-time = "2024-07-26T06:02:49.338Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/9f/06d46d1d36d322deac92a59066deacb7983f77dd9d655e51a838fa5c7273/dbldatagen-0.4.0.post1-py3-none-any.whl", hash = "sha256:b94b5fcf2bf5113fe789f5cdf92b50eb62b5e6c25fc867b634d6543cc1e79d40", size = 122756, upload-time = "2024-07-26T06:02:47.64Z" },
 ]
 
 [[package]]

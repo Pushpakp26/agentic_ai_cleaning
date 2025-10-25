@@ -3,6 +3,9 @@ import io
 from pathlib import Path
 from typing import Dict, Any
 
+import matplotlib
+# Use non-interactive backend to avoid tkinter threading issues
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
@@ -94,11 +97,17 @@ class VisualizerAgent(BaseAgent):
 		# Remove missing values for plotting
 		data = df[column].dropna()
 		
-		ax.hist(data, bins=30, alpha=0.7, edgecolor='black')
-		ax.set_title(f'Distribution of {column}')
-		ax.set_xlabel(column)
-		ax.set_ylabel('Frequency')
-		ax.grid(True, alpha=0.3)
+		# Check if data is empty after dropping NaN
+		if len(data) == 0:
+			ax.text(0.5, 0.5, f'No valid data for {column}\n(All values are missing)', 
+				   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+			ax.set_title(f'Distribution of {column}')
+		else:
+			ax.hist(data, bins=30, alpha=0.7, edgecolor='black')
+			ax.set_title(f'Distribution of {column}')
+			ax.set_xlabel(column)
+			ax.set_ylabel('Frequency')
+			ax.grid(True, alpha=0.3)
 		
 		return self._figure_to_base64(fig)
 	
@@ -109,10 +118,16 @@ class VisualizerAgent(BaseAgent):
 		# Remove missing values for plotting
 		data = df[column].dropna()
 		
-		ax.boxplot(data)
-		ax.set_title(f'Boxplot of {column}')
-		ax.set_ylabel(column)
-		ax.grid(True, alpha=0.3)
+		# Check if data is empty after dropping NaN
+		if len(data) == 0:
+			ax.text(0.5, 0.5, f'No valid data for {column}\n(All values are missing)', 
+				   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+			ax.set_title(f'Boxplot of {column}')
+		else:
+			ax.boxplot(data)
+			ax.set_title(f'Boxplot of {column}')
+			ax.set_ylabel(column)
+			ax.grid(True, alpha=0.3)
 		
 		return self._figure_to_base64(fig)
 	
@@ -147,13 +162,19 @@ class VisualizerAgent(BaseAgent):
 			# Get value counts and limit to top 20 categories
 			value_counts = series.value_counts().head(20)
 			
-			# Create bar chart
-			value_counts.plot(kind='bar', ax=ax)
-			ax.set_title(f'Top Categories in {column}')
-			ax.set_xlabel(column)
-			ax.set_ylabel('Count')
-			ax.tick_params(axis='x', rotation=45)
-			ax.grid(True, alpha=0.3)
+			# Check if data is empty
+			if len(value_counts) == 0:
+				ax.text(0.5, 0.5, f'No data for {column}', 
+					   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+				ax.set_title(f'Top Categories in {column}')
+			else:
+				# Create bar chart
+				value_counts.plot(kind='bar', ax=ax)
+				ax.set_title(f'Top Categories in {column}')
+				ax.set_xlabel(column)
+				ax.set_ylabel('Count')
+				ax.tick_params(axis='x', rotation=45)
+				ax.grid(True, alpha=0.3)
 			
 			return self._figure_to_base64(fig)
 			

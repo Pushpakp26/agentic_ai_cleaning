@@ -23,7 +23,8 @@ class ScalingAgentPyspark(PySparkBaseAgent):
         Args:
             df: Input DataFrame (PySpark or Pandas)
             column: Specific column to scale (if None, scales all numeric columns)
-            method: Scaling method ("standardize", "normalize", "robust")
+            method: Scaling method - "standardize"/"standard" (Z-score), 
+                   "normalize"/"minmax" (0-1 range), or "robust" (median/IQR)
             **kwargs: Additional parameters
             
         Returns:
@@ -49,14 +50,15 @@ class ScalingAgentPyspark(PySparkBaseAgent):
         else:
             numeric_cols = [
                 f.name for f in df.schema.fields
-                if f.dataType.simpleString() in ["double", "float", "int", "bigint"]
+                if f.dataType.simpleString() in ["double", "float", "int", "bigint", "long", "short", "byte", "decimal", "tinyint", "smallint"]
             ]
         
         # Avoid expensive counts; rely on logical logging
         
         # Scale each column
         for col in numeric_cols:
-            if method == "standardize":
+            # Support both naming conventions: 'standard'/'standardize', 'minmax'/'normalize'
+            if method in ["standardize", "standard"]:
                 stats = df.select(
                     F.mean(F.col(col)).alias("mean"), 
                     F.stddev(F.col(col)).alias("std")
@@ -64,7 +66,7 @@ class ScalingAgentPyspark(PySparkBaseAgent):
                 if stats["std"] and stats["std"] != 0:
                     df = df.withColumn(col, (F.col(col) - stats["mean"]) / stats["std"])
                     logger.info(f"Standardized column '{col}' using Z-score scaling")
-            elif method == "normalize":
+            elif method in ["normalize", "minmax"]:
                 stats = df.select(
                     F.min(F.col(col)).alias("min"), 
                     F.max(F.col(col)).alias("max")
@@ -81,7 +83,7 @@ class ScalingAgentPyspark(PySparkBaseAgent):
                     df = df.withColumn(col, (F.col(col) - stats["median"]) / stats["iqr"])
                     logger.info(f"Applied robust scaling to column '{col}'")
             else:
-                raise ValueError("Method must be 'standardize', 'normalize', or 'robust'")
+                raise ValueError(f"Method must be 'standardize'/'standard', 'normalize'/'minmax', or 'robust'. Got: '{method}'")
         
         self.log_processing_end(column=column)
         

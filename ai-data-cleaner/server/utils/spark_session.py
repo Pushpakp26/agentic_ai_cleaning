@@ -2,6 +2,9 @@ from functools import lru_cache
 from typing import Optional, Dict, Any
 import threading
 from contextlib import contextmanager
+import os
+import sys
+import tempfile
 
 from pyspark.sql import SparkSession
 
@@ -35,6 +38,23 @@ class SparkSessionManager:
             self._initialized = True
             logger.info("SparkSessionManager initialized")
     
+    def _setup_windows_hadoop_workaround(self):
+        """Set up HADOOP_HOME for Windows with winutils.exe."""
+        try:
+            if not os.environ.get('HADOOP_HOME'):
+                # Set to actual winutils.exe installation location
+                hadoop_home = r'C:\hadoop'
+                if os.path.exists(os.path.join(hadoop_home, 'bin', 'winutils.exe')):
+                    os.environ['HADOOP_HOME'] = hadoop_home
+                    os.environ['hadoop.home.dir'] = hadoop_home
+                    logger.info(f"Set HADOOP_HOME to: {hadoop_home}")
+                else:
+                    logger.error(f"winutils.exe not found at {hadoop_home}\\bin\\winutils.exe")
+                    raise FileNotFoundError(f"Please install winutils.exe to {hadoop_home}\\bin\\")
+        except Exception as e:
+            logger.error(f"Failed to set up HADOOP_HOME: {e}")
+            raise
+    
     def get_session(self, app_name: str = "AIDataCleaner", master: Optional[str] = None, 
                    config: Optional[Dict[str, str]] = None) -> SparkSession:
         """Get or create Spark session with reference counting."""
@@ -47,6 +67,10 @@ class SparkSessionManager:
     
     def _create_session(self, app_name: str, master: Optional[str], config: Optional[Dict[str, str]]):
         """Create new Spark session with optimized configuration."""
+        # Set up Windows-specific Hadoop workaround
+        if sys.platform == 'win32':
+            self._setup_windows_hadoop_workaround()
+        
         builder = SparkSession.builder.appName(app_name)
         
         if master:
@@ -54,12 +78,31 @@ class SparkSessionManager:
         
         # Optimized configuration for data processing
         default_config = {
+    # Enable Arrow and adaptive execution
             "spark.sql.execution.arrow.pyspark.enabled": "true",
             "spark.sql.adaptive.enabled": "true",
             "spark.sql.adaptive.coalescePartitions.enabled": "true",
             "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
-            "spark.sql.execution.arrow.maxRecordsPerBatch": "10000"
-        }
+            "spark.sql.execution.arrow.maxRecordsPerBatch": "5000",
+
+            # 🧠 Memory tuning for 8GB system
+            "spark.driver.memory": "3g",       # use ~5GB of 8GB total
+            "spark.executor.memory": "3g",     # same for local mode
+            "spark.memory.fraction": "0.4",    # 70% of heap used for execution
+            "spark.memory.storageFraction": "0.3",
+
+            # ⚙️ Shuffle optimization
+            "spark.sql.shuffle.partitions": "100",  # reduce shuffle overhead
+            "spark.default.parallelism": "100",
+
+            # 💾 Allow spilling large shuffles to disk (change path if needed)
+            "spark.local.dir": "D:/spark_temp",
+
+            # 🧹 Auto-clean temp blocks faster
+            "spark.cleaner.referenceTracking.cleanCheckpoints": "true",
+            "spark.cleaner.periodicGC.interval": "2min"
+}
+
         
         # Merge with user config
         final_config = {**default_config, **(config or {})}

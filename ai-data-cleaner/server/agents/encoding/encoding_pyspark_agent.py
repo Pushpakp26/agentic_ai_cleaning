@@ -1,4 +1,4 @@
-from typing import Union, Optional, List
+from typing import Union, Optional, List, Tuple, Dict, Any
 import pandas as pd
 from pyspark.sql import DataFrame
 from pyspark.ml import Pipeline
@@ -25,7 +25,7 @@ class EncodingAgentPyspark(PySparkBaseAgent):
         strategy: Optional[str] = None,
         return_metadata: bool = False,
         **kwargs,
-    ) -> Union[DataFrame, pd.DataFrame]:
+    ) -> Union[DataFrame, pd.DataFrame, Tuple[Union[DataFrame, pd.DataFrame], Dict[str, Any]]]:
         """
         Encode categorical columns using one-hot or label encoding.
 

@@ -5,6 +5,9 @@ Generates before/after visualizations and statistical comparisons for numerical 
 
 import pandas as pd
 import numpy as np
+import matplotlib
+# Use non-interactive backend to avoid tkinter threading issues
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
@@ -59,7 +62,9 @@ class ComparisonVisualizer:
         
         if not common_numerical_cols:
             logger.warning("No common numerical columns found for comparison")
-            return {"visualizations": {}, "statistics": {}}
+            # Return empty report HTML instead of missing key
+            empty_html = self._generate_empty_report(session_id)
+            return {"visualizations": {}, "statistics": {}, "report_html": empty_html}
         
         # Generate visualizations for each column
         visualizations = {}
@@ -555,4 +560,67 @@ class ComparisonVisualizer:
 </html>
 """
         
+        return html
+    
+    def _generate_empty_report(self, session_id: str) -> str:
+        """Generate an empty report when no numerical columns are found."""
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Before vs After Comparison Report</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .container {{
+            max-width: 800px;
+            background-color: white;
+            padding: 50px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            text-align: center;
+        }}
+        h1 {{
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }}
+        .message {{
+            color: #666;
+            font-size: 1.1em;
+            line-height: 1.6;
+        }}
+        .info-box {{
+            background-color: #e8f4f8;
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 30px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Before vs After Comparison Report</h1>
+        <div class="message">
+            <p><strong>No numerical columns found for comparison.</strong></p>
+            <p>This may happen if:</p>
+            <ul style="text-align: left; display: inline-block;">
+                <li>All numerical columns were removed during processing</li>
+                <li>All columns were converted to categorical types</li>
+                <li>The dataset only contains text/categorical data</li>
+            </ul>
+        </div>
+        <div class="info-box">
+            <strong>Session ID:</strong> {session_id}<br>
+            <strong>Generated:</strong> {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
+        </div>
+    </div>
+</body>
+</html>
+"""
         return html

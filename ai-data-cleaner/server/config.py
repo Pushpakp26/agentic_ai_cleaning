@@ -14,13 +14,13 @@ PROCESSED_DIR = (PROJECT_ROOT / "processed_data").resolve()
 CLIENT_DIR = (PROJECT_ROOT / "client").resolve()
 
 # Thresholds and defaults
-FILE_SIZE_SPARK_THRESHOLD_MB = int(os.getenv("FILE_SIZE_SPARK_THRESHOLD_MB", "200"))
+FILE_SIZE_SPARK_THRESHOLD_MB = int(os.getenv("FILE_SIZE_SPARK_THRESHOLD_MB", "15"))
 SAMPLE_ROWS_PER_COLUMN = int(os.getenv("SAMPLE_ROWS_PER_COLUMN", "20"))
 MAX_SAMPLE_ROWS = int(os.getenv("MAX_SAMPLE_ROWS", "20"))
 MAX_UNIQUE_PREVIEW = int(os.getenv("MAX_UNIQUE_PREVIEW", "50"))
 
 # Gemini / Google Generative AI
-GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-pro")
+GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 
 # Security / Upload

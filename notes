@@ -1,0 +1,12 @@
+(data_agent) PS D:\data_agent> $env:JAVA_HOME="C:\Program Files\Java\jdk-17"
+(data_agent) PS D:\data_agent> $env:PATH="$env:JAVA_HOME\bin;$env:PATH"
+
+
+
+
+(data_agent) PS D:\data_agent> $env:SPARK_HOME = "C:\spark-4.0.1-bin-hadoop3"
+(data_agent) PS D:\data_agent> $env:PATH = "$env:SPARK_HOME\bin;$env:PATH"
+
+
+$env:HADOOP_HOME="C:\hadoop"
+$env:PATH="$env:HADOOP_HOME\bin;$env:PATH"

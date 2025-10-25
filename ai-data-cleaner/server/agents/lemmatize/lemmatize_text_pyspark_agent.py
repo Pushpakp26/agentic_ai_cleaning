@@ -11,7 +11,11 @@ except ImportError:
     from utils.logger import get_logger
 
 try:
+    import nltk
     from nltk.stem import WordNetLemmatizer
+    # Download required NLTK data
+    nltk.download("wordnet", quiet=True)
+    nltk.download("omw-1.4", quiet=True)
     NLTK_AVAILABLE = True
 except ImportError:
     NLTK_AVAILABLE = False

@@ -186,7 +186,7 @@ class SummarizerAgentSpark(BaseAgent):
 
         duplicate_rows = total_rows - df.dropDuplicates().count()
 
-        numeric_cols = [f.name for f in df.schema.fields if f.dataType.simpleString() in ["int", "bigint", "double", "float", "decimal"]]
+        numeric_cols = [f.name for f in df.schema.fields if f.dataType.simpleString() in ["int", "bigint", "double", "float", "decimal", "long", "short", "byte", "tinyint", "smallint"]]
         categorical_cols = [c for c in df.columns if c not in numeric_cols]
 
         return {
@@ -376,7 +376,7 @@ class SummarizerAgentSpark(BaseAgent):
         """Generate data recommendations for PySpark DataFrame."""
         recommendations = []
 
-        numeric_cols = [f.name for f in df.schema.fields if f.dataType.simpleString() in ["int", "bigint", "double", "float", "decimal"]]
+        numeric_cols = [f.name for f in df.schema.fields if f.dataType.simpleString() in ["int", "bigint", "double", "float", "decimal", "long", "short", "byte", "tinyint", "smallint"]]
         categorical_cols = [c for c in df.columns if c not in numeric_cols]
 
         total = df.count() if df is not None else 0

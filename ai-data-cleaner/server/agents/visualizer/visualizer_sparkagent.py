@@ -3,6 +3,9 @@ import io
 from pathlib import Path
 from typing import Dict, Any
 
+import matplotlib
+# Use non-interactive backend to avoid tkinter threading issues
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pyspark.sql import DataFrame
@@ -32,8 +35,8 @@ class VisualizerAgentSpark(BaseAgent):
         visualizations = {}
 
         # Separate numeric and categorical columns
-        numeric_cols = [f.name for f in df.schema.fields if str(f.dataType) in ("IntegerType", "DoubleType", "FloatType", "LongType")]
-        categorical_cols = [f.name for f in df.schema.fields if str(f.dataType) == "StringType"]
+        numeric_cols = [f.name for f in df.schema.fields if f.dataType.simpleString() in ("int", "bigint", "double", "float", "long", "short", "byte", "decimal", "tinyint", "smallint")]
+        categorical_cols = [f.name for f in df.schema.fields if f.dataType.simpleString() == "string"]
 
         # Log column types for debugging
         logger.info(f"Processing visualizations: {len(numeric_cols)} numeric, {len(categorical_cols)} categorical columns")
@@ -41,26 +44,37 @@ class VisualizerAgentSpark(BaseAgent):
         # Numeric visualizations
         for col_name in numeric_cols:
             try:
-                stats = df.select(col_name).agg(
-                    spark_min(col_name).alias("min"),
-                    spark_max(col_name).alias("max"),
-                    mean(col_name).alias("mean")
-                ).collect()[0]
-                values = df.select(col_name).rdd.flatMap(lambda x: [x[0]]).filter(lambda x: x is not None).take(1000)
-                visualizations[f"{col_name}_histogram"] = self._plot_histogram(values, col_name)
-                visualizations[f"{col_name}_boxplot"] = self._plot_boxplot(values, col_name)
-                logger.debug(f"Generated visualizations for numeric column: {col_name}")
+                # Use sample + collect instead of RDD operations to avoid Python worker crashes
+                sample_df = df.select(col_name).filter(df[col_name].isNotNull()).sample(False, min(1000.0 / df.count(), 1.0)).limit(1000)
+                values = [row[0] for row in sample_df.collect()]
+                
+                # Check if we have valid data after filtering nulls
+                if len(values) == 0:
+                    logger.warning(f"Column '{col_name}' has no valid data (all values are missing)")
+                    # Create empty plot with message
+                    visualizations[f"{col_name}_histogram"] = self._plot_empty(col_name, "histogram")
+                    visualizations[f"{col_name}_boxplot"] = self._plot_empty(col_name, "boxplot")
+                else:
+                    visualizations[f"{col_name}_histogram"] = self._plot_histogram(values, col_name)
+                    visualizations[f"{col_name}_boxplot"] = self._plot_boxplot(values, col_name)
+                    logger.debug(f"Generated visualizations for numeric column: {col_name}")
             except Exception as e:
                 logger.warning(f"Failed to generate visualization for numeric column '{col_name}': {e}")
 
-        # Categorical visualizations (limit top 5 columns)
-        for col_name in categorical_cols[:5]:
+        # Categorical visualizations (limit top 10 columns)
+        for col_name in categorical_cols[:10]:
             try:
                 counts = df.groupBy(col_name).count().orderBy("count", ascending=False).limit(20).collect()
-                categories = [str(row[col_name]) if row[col_name] is not None else "<NULL>" for row in counts]
-                counts_values = [row["count"] for row in counts]
-                visualizations[f"{col_name}_bar"] = self._plot_bar(categories, counts_values, col_name)
-                logger.debug(f"Generated visualization for categorical column: {col_name}")
+                
+                # Check if we have any data
+                if len(counts) == 0:
+                    logger.warning(f"Column '{col_name}' has no data")
+                    visualizations[f"{col_name}_bar"] = self._plot_empty(col_name, "bar")
+                else:
+                    categories = [str(row[col_name]) if row[col_name] is not None else "<NULL>" for row in counts]
+                    counts_values = [row["count"] for row in counts]
+                    visualizations[f"{col_name}_bar"] = self._plot_bar(categories, counts_values, col_name)
+                    logger.debug(f"Generated visualization for categorical column: {col_name}")
             except Exception as e:
                 logger.warning(f"Failed to generate visualization for categorical column '{col_name}': {e}")
 
@@ -88,6 +102,15 @@ class VisualizerAgentSpark(BaseAgent):
     # ----------------------------
     # Plotting methods (base64)
     # ----------------------------
+    def _plot_empty(self, column, plot_type):
+        """Create empty plot with message for columns with no data."""
+        fig, ax = plt.subplots(figsize=(8,6))
+        ax.text(0.5, 0.5, f'No valid data for {column}\n(All values are missing)', 
+               ha='center', va='center', transform=ax.transAxes, fontsize=12)
+        ax.set_title(f'{plot_type.capitalize()} of {column}')
+        ax.axis('off')
+        return self._figure_to_base64(fig)
+    
     def _plot_histogram(self, data, column):
         fig, ax = plt.subplots(figsize=(8,6))
         ax.hist(data, bins=30, alpha=0.7, edgecolor='black')

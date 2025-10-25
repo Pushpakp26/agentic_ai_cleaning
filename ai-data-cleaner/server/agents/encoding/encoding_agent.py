@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from typing import Union, Tuple, Dict, Any
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 
 try:
@@ -25,7 +26,7 @@ class EncodingAgent(BaseAgent):
         keep_original: bool = True,
         return_metadata: bool = False,
         **kwargs
-    ) -> pd.DataFrame:
+    ) -> Union[pd.DataFrame, Tuple[pd.DataFrame, Dict[str, Any]]]:
         df = df.copy().reset_index(drop=True)
 
         enc_method = method

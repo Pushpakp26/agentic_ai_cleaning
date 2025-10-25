@@ -49,7 +49,7 @@ class ImputersAgent(PySparkBaseAgent):
         else:
             numeric_cols = [
                 f.name for f in df.schema.fields
-                if f.dataType.simpleString() in ["double", "float", "int", "bigint"]
+                if f.dataType.simpleString() in ["double", "float", "int", "bigint", "long", "short", "byte", "decimal", "tinyint", "smallint"]
             ]
         
         # Avoid expensive counts; rely on logical logging

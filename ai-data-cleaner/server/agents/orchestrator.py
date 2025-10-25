@@ -15,11 +15,14 @@
 # ❌ Problem: SummarizerAgent is Pandas-only.
 
 import asyncio
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Dict, Any, Optional
 
 import pandas as pd
+from pyspark.sql.types import (IntegerType, LongType, FloatType, DoubleType, 
+                                DecimalType, ShortType, ByteType, NumericType)
 
 try:
     from .inspector.gemini_inspector_agent import GeminiInspectorAgent    #pandas inspector
@@ -205,7 +208,8 @@ class PipelineOrchestrator:
 
 		# Pipeline state
 		self.current_df = None
-		self.original_df = None  # Store original dataframe for manual comparison
+		self.original_df = None  # Store original dataframe for comparison (Pandas or Pandas sample from Spark)
+		self.original_spark_df = None  # Store original Spark DataFrame (if using Spark)
 		self.original_column_types = {}  # Track original column types (categorical vs numerical)
 		self.label_encoded_columns = set()  # Track columns that were label-encoded (should not be scaled)
 		self.onehot_encoded_columns = set()  # Track columns that were one-hot encoded (binary features)
@@ -311,19 +315,20 @@ class PipelineOrchestrator:
 			col_count = len(self.current_df.columns)
 			logger.info(f"Loaded Spark dataset with shape: ({row_count}, {col_count})")
 			
-			# For Spark, take a sample for visualization instead of converting entire dataset
-			# This preserves Spark's benefits for big data
-			sample_size = min(10000, row_count)  # Sample up to 10k rows for visualization
-			sample_fraction = sample_size / row_count if row_count > 0 else 1.0
-			self.original_df = self.current_df.sample(False, sample_fraction, seed=42).toPandas()
-			logger.info(f"Sampled {len(self.original_df)} rows from Spark DataFrame for visualization")
+			# Store original Spark DataFrame for visualization
+			self.original_spark_df = self.current_df
 			
-			# Track original column types from Spark schema
+			# For comparison report, take a sample and convert to Pandas
+			sample_size = min(10000, row_count)  # Sample up to 10k rows
+			self.original_df = self.current_df.limit(sample_size).toPandas()
+			logger.info(f"Sampled {len(self.original_df)} rows from Spark DataFrame for comparison report")
+			
+			# Track original column types from Spark schema (more reliable than sample)
 			for field in self.current_df.schema.fields:
 				col_name = field.name
-				# Check if numeric type in Spark
-				if str(field.dataType) in ['IntegerType', 'LongType', 'FloatType', 'DoubleType', 
-											'DecimalType', 'ShortType', 'ByteType']:
+				# Check if numeric type in Spark using isinstance
+				if isinstance(field.dataType, (IntegerType, LongType, FloatType, DoubleType, 
+											   DecimalType, ShortType, ByteType)):
 					self.original_column_types[col_name] = 'numerical'
 				else:
 					self.original_column_types[col_name] = 'categorical'
@@ -717,19 +722,18 @@ class PipelineOrchestrator:
 	
 	
 	async def _generate_visualizations(self):
-		"""Generate data visualizations."""
+		"""Generate data visualizations from ORIGINAL data."""
 		try:
-			# Clean data before visualization to prevent concatenation errors
 			if self.use_spark:
-				# For Spark, convert to Pandas for visualization (safer)
-				logger.info("Converting Spark DataFrame to Pandas for visualization...")
-				pandas_df = self.current_df.toPandas()
-				clean_df = self._fix_concatenated_data(pandas_df)
+				# Use Spark-native visualizer on ORIGINAL Spark DataFrame
+				logger.info("Generating visualizations from ORIGINAL Spark data...")
+				visualizations = self.visualizer_spark.process(self.original_spark_df)
 			else:
-				clean_df = self._fix_concatenated_data(self.current_df.copy())
-		
-			# Generate visualizations for the processed dataframe
-			visualizations = self.visualizer.process(clean_df)
+				# Generate visualizations from ORIGINAL Pandas DataFrame
+				logger.info("Generating visualizations from ORIGINAL Pandas data...")
+				clean_df = self._fix_concatenated_data(self.original_df.copy())
+				visualizations = self.visualizer.process(clean_df)
+			
 			await self._save_visualizations(visualizations)
 		except Exception as e:
 			logger.error(f"Visualization generation failed: {e}")
@@ -765,10 +769,17 @@ class PipelineOrchestrator:
 		try:
 			logger.info("Generating before/after comparison report...")
 			
-			# Convert Spark to Pandas if needed
+			# Convert Spark to Pandas if needed (with sampling to avoid memory overflow)
 			if self.use_spark:
-				logger.info("Converting Spark DataFrames to Pandas for comparison...")
-				processed_pandas = self.current_df.toPandas()
+				row_count = self.current_df.count()
+				sample_size = min(10000, row_count)
+				logger.info(f"Sampling {sample_size} rows from Spark DataFrame for comparison (avoiding memory overflow)...")
+				processed_pandas = self.current_df.limit(sample_size).toPandas()
+				
+				# Also ensure original_df is same size (it should already be sampled from _load_data)
+				if len(self.original_df) > sample_size:
+					logger.info(f"Trimming original_df to {sample_size} rows for fair comparison")
+					self.original_df = self.original_df.head(sample_size)
 			else:
 				processed_pandas = self.current_df
 		
@@ -798,22 +809,94 @@ class PipelineOrchestrator:
    
 #completed pandas+pyspark
 	async def _save_final_dataset(self) -> Path:
-		"""Save the final processed dataset in Pandas or PySpark format."""
-		output_filename = f"processed_{self.session_id}.{self.file_kind}"
+		"""Save the final processed dataset using native Spark or Pandas writers."""
+		output_filename = f"processed_{self.session_id}"
 		
 		if self.use_spark:
-			# Save Spark DataFrame as Parquet regardless of original file kind
-			path = str(PROCESSED_DIR / output_filename.replace(self.file_kind, "parquet"))
-			self.current_df.write.mode("overwrite").parquet(path)
-			# Avoid triggering full scan via count(); rely on schema-only info
+			# Use native Spark writers (winutils.exe is installed)
+			row_count = self.current_df.count()
 			col_count = len(self.current_df.columns)
-			logger.info(f"[Spark] Saved final dataset '{path}' with {col_count} columns")
-			return Path(path)
+			logger.info(f"[Spark] Saving dataset with {row_count} rows and {col_count} columns using native Spark writer...")
+			
+			# Convert vector columns to regular columns for CSV/JSON compatibility
+			df_to_save = self._convert_vectors_to_columns(self.current_df)
+			
+			# Prepare output path
+			output_path = PROCESSED_DIR / output_filename
+			
+			# Use native Spark writers based on file format
+			if self.file_kind == "csv":
+				# Coalesce to single file for easier handling
+				df_to_save.coalesce(1).write.mode("overwrite") \
+					.option("header", "true") \
+					.csv(str(output_path))
+				# Find the actual CSV file in the output directory
+				csv_files = list(output_path.glob("*.csv"))
+				if csv_files:
+					final_path = PROCESSED_DIR / f"{output_filename}.csv"
+					csv_files[0].rename(final_path)
+					# Clean up the directory
+					shutil.rmtree(output_path, ignore_errors=True)
+					output_path = final_path
+				
+			elif self.file_kind == "parquet":
+				df_to_save.write.mode("overwrite").parquet(str(output_path))
+				
+			elif self.file_kind == "json":
+				df_to_save.coalesce(1).write.mode("overwrite").json(str(output_path))
+				# Find the actual JSON file in the output directory
+				json_files = list(output_path.glob("*.json"))
+				if json_files:
+					final_path = PROCESSED_DIR / f"{output_filename}.json"
+					json_files[0].rename(final_path)
+					# Clean up the directory
+					shutil.rmtree(output_path, ignore_errors=True)
+					output_path = final_path
+			
+			logger.info(f"[Spark] Saved final dataset to '{output_path}'")
+			return output_path
 		else:
-			# Save Pandas DataFrame in original format (CSV/JSON/Parquet)
-			path = write_pandas(self.current_df, output_filename, self.file_kind)
+			# Save Pandas DataFrame in original format
+			path = write_pandas(self.current_df, f"{output_filename}.{self.file_kind}", self.file_kind)
 			logger.info(f"[Pandas] Saved final dataset '{path}' with shape {self.current_df.shape}")
 			return Path(path) if not isinstance(path, Path) else path
+	
+	def _convert_vectors_to_columns(self, df):
+		"""Convert SparseVector/DenseVector columns to regular columns for CSV compatibility."""
+		from pyspark.ml.linalg import VectorUDT
+		from pyspark.ml.functions import vector_to_array
+		from pyspark.sql import functions as F
+		
+		# Check each column for vector types
+		vector_cols = []
+		for field in df.schema.fields:
+			if isinstance(field.dataType, VectorUDT):
+				vector_cols.append(field.name)
+		
+		if not vector_cols:
+			return df
+		
+		logger.info(f"Converting {len(vector_cols)} vector column(s) to individual columns: {vector_cols}")
+		
+		for col_name in vector_cols:
+			# Convert vector to array first
+			df = df.withColumn(f"{col_name}_array", vector_to_array(F.col(col_name)))
+			
+			# Get the vector size by examining the first non-null value
+			first_row = df.select(f"{col_name}_array").filter(F.col(f"{col_name}_array").isNotNull()).first()
+			if first_row and first_row[0] is not None:
+				vector_size = len(first_row[0])
+				
+				# Create individual columns for each array element
+				for i in range(vector_size):
+					new_col_name = f"{col_name}_{i}"
+					df = df.withColumn(new_col_name, F.col(f"{col_name}_array")[i])
+				
+				# Drop the temporary array and original vector columns
+				df = df.drop(col_name, f"{col_name}_array")
+				logger.info(f"Expanded '{col_name}' into {vector_size} columns")
+		
+		return df
 	
 #completed pandas+pyspark 
 	async def _save_snapshot(self, step_name: str):
