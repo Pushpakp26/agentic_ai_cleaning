@@ -221,7 +221,9 @@ class PipelineOrchestrator:
 		self._spark_session_managed = False
 		# Track actually applied operations for accurate reporting
 		self.applied_ops = []
-
+		# Track generated artifact filenames
+		self.report_filename = None
+  
 		logger.info(f"Initialized orchestrator for {input_file.name} (Spark: {self.use_spark})")
 
 
@@ -263,14 +265,22 @@ class PipelineOrchestrator:
 			yield {"type": "progress", "message": "Saving processed dataset...", "progress": 95}
 			final_path = await self._save_final_dataset()
 	
-			# Complete
-			yield {
+			logger.info(f"Preparing completion message with output_file: {final_path.name}")
+
+			# Complete - include all generated files for download
+			completion_data = {
 				"type": "complete",
 				"message": "Pipeline completed successfully!",
 				"progress": 100,
 				"output_file": final_path.name,
-				"report_file": f"report_{self.session_id}.html"
+				"report_file": self.report_filename or (f"report_{self.session_id}.html" if not self.use_spark else f"report_spark_{self.session_id}.html"),
+				"visualization_gallery": f"visualizations_gallery_{self.session_id}.html",
+				"comparison_report": f"comparison_report_{self.session_id}.html"
 			}
+			logger.info(f"Sending completion message: {completion_data}")
+			yield completion_data
+			logger.info("Completion message yielded, generator ending")
+			return  # Explicitly end the generator here
 	
 		except Exception as e:
 			logger.error(f"Pipeline failed: {e}", exc_info=True)
@@ -279,6 +289,7 @@ class PipelineOrchestrator:
 				"message": f"Pipeline failed: {str(e)}",
 				"progress": 0
 			}
+			return  # Explicitly end the generator here
    
 		finally:
 			# Cleanup Spark resources
@@ -1320,13 +1331,22 @@ class PipelineOrchestrator:
 			html = report_data.get("html_content")
 
 			if path:
-				logger.info(f"Report saved at: {path}")
+				try:
+					from pathlib import Path as _Path
+					self.report_filename = _Path(path).name
+				except Exception:
+					self.report_filename = str(path).split('/')[-1]
+				logger.info(f"Report saved at: {path} (filename set to {self.report_filename})")
 				return
 
 			if html:
-				report_path = PROCESSED_DIR / f"report_{self.session_id}.html"
+				report_filename = (
+					f"report_spark_{self.session_id}.html" if self.use_spark else f"report_{self.session_id}.html"
+				)
+				report_path = PROCESSED_DIR / report_filename
 				report_path.write_text(html, encoding='utf-8')
-				logger.info(f"Report saved at: {report_path}")
+				self.report_filename = report_filename
+				logger.info(f"Report saved at: {report_path} (filename set to {self.report_filename})")
 				return
 
 			logger.warning("Summarizer did not return a report path or html content")

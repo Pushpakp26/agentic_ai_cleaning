@@ -70,3 +70,18 @@ async def download_report(filename: str) -> FileResponse:
 		filename=filename,
 		media_type=media_type,
 	)
+
+
+@router.get("/view/report/{filename}")
+async def view_report(filename: str) -> FileResponse:
+	file_path = PROCESSED_DIR / filename
+	if not file_path.exists():
+		raise HTTPException(status_code=404, detail=f"Report not found: {filename}")
+
+	media_type = "text/html" if filename.endswith(".html") else "application/pdf"
+	logger.info(f"Serving report inline: {filename}")
+	return FileResponse(
+		path=str(file_path),
+		media_type=media_type,
+		headers={"Content-Disposition": "inline"},
+	)

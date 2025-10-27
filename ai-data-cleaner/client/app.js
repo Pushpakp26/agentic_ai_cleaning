@@ -29,6 +29,11 @@ class DataCleanerApp {
         document.getElementById('retry-processing').addEventListener('click', () => this.resetApp());
         document.getElementById('download-dataset').addEventListener('click', () => this.downloadFile('dataset'));
         document.getElementById('download-report').addEventListener('click', () => this.downloadFile('report'));
+        document.getElementById('download-visualizations').addEventListener('click', () => this.downloadFile('visualizations'));
+        document.getElementById('download-comparison').addEventListener('click', () => this.downloadFile('comparison'));
+        document.getElementById('view-analysis-report').addEventListener('click', () => this.viewReport('report'));
+        document.getElementById('view-visualizations').addEventListener('click', () => this.viewReport('visualizations'));
+        document.getElementById('view-comparison').addEventListener('click', () => this.viewReport('comparison'));
     }
 
     handleDragOver(e) {
@@ -152,15 +157,37 @@ class DataCleanerApp {
             this.processingComplete = false;
 
             this.eventSource.onmessage = (event) => {
-                this.handleProgressEvent(event);
+                console.log('[EventSource] *** MESSAGE RECEIVED ***');
+                console.log('[EventSource] Event type:', event.type);
+                console.log('[EventSource] Message data:', event.data);
+                console.log('[EventSource] Last event ID:', event.lastEventId);
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[EventSource] *** PARSED DATA ***');
+                    console.log('[EventSource] Data type:', data.type);
+                    console.log('[EventSource] Full data:', data);
+                    
+                    // Set completion flag for complete/error messages
+                    if (data.type === 'complete' || data.type === 'error') {
+                        console.log('[EventSource] *** COMPLETION DETECTED ***');
+                        this.processingComplete = true;
+                    }
+                    
+                    this.handleProgressEvent(event);
+                } catch (error) {
+                    console.error('Error parsing message in onmessage:', error);
+                    console.log('[EventSource] Raw event data that failed to parse:', event.data);
+                    this.handleProgressEvent(event);
+                }
             };
 
             this.eventSource.onerror = (error) => {
-                console.error('SSE error:', error);
-                if (!this.processingComplete) {  // Only show error if not completed
-                    this.logMessage('Connection error occurred', 'error');
+                // Ignore connection errors - they happen when stream closes naturally
+                console.log('SSE connection closed');
+                if (this.eventSource) {
+                    this.eventSource.close();
+                    this.eventSource = null;
                 }
-                this.eventSource.close();
             };
             // this.eventSource.onerror = (error) => {
             //     // Only log error if processing didn't complete successfully
@@ -183,17 +210,16 @@ class DataCleanerApp {
     handleProgressEvent(event) {
         try {
             const data = JSON.parse(event.data);
+            console.log('[handleProgressEvent] Parsed data:', data);
+            console.log('[handleProgressEvent] Message type:', data.type);
             this.updateProgress(data);
 
             if (data.type === 'complete') {
-                this.processingComplete = true;
-                // Close EventSource immediately to prevent error event
-                if (this.eventSource) {
-                    this.eventSource.close();
-                    this.eventSource = null;
-                }
+                console.log('[handleProgressEvent] COMPLETION MESSAGE RECEIVED!');
+                // Flag already set in onmessage handler
                 this.handleProcessingComplete(data);
             } else if (data.type === 'error') {
+                // Flag already set in onmessage handler
                 this.handleProcessingError(data);
             }
         } catch (error) {
@@ -218,11 +244,9 @@ class DataCleanerApp {
     }
 
     handleProcessingComplete(data) {
-        this.processingComplete = true;  // Set flag BEFORE closing
+        console.log('[handleProcessingComplete] Processing completion...');
+        this.processingComplete = true;
         this.showLoading(false);
-        if (this.eventSource) {
-            this.eventSource.close();
-        }
 
         this.logMessage('Processing completed successfully!', 'success');
         this.switchSection('results-section');
@@ -230,11 +254,26 @@ class DataCleanerApp {
         // Store output file names for downloads
         this.outputFile = data.output_file;
         this.reportFile = data.report_file;
+        this.visualizationGallery = data.visualization_gallery;
+        this.comparisonReport = data.comparison_report;
+        
+        console.log('[handleProcessingComplete] Completion handled successfully');
+            // ✅ Close SSE connection after completion
+    if (this.eventSource) {
+        this.eventSource.close();
+        this.eventSource = null;
+        console.log('[handleProcessingComplete] SSE connection closed');
+    }
+
     }
 
     handleProcessingError(data) {
+        this.processingComplete = true; // Mark as complete to prevent error message
         this.showLoading(false);
-        this.eventSource.close();
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+        }
         this.showError(data.message);
     }
 
@@ -257,13 +296,35 @@ class DataCleanerApp {
 
     async downloadFile(type) {
         try {
-            const filename = type === 'dataset' ? this.outputFile : this.reportFile;
+            let filename, endpoint;
+            
+            switch(type) {
+                case 'dataset':
+                    filename = this.outputFile;
+                    endpoint = 'dataset';
+                    break;
+                case 'report':
+                    filename = this.reportFile;
+                    endpoint = 'report';
+                    break;
+                case 'visualizations':
+                    filename = this.visualizationGallery;
+                    endpoint = 'report';  // HTML files use report endpoint
+                    break;
+                case 'comparison':
+                    filename = this.comparisonReport;
+                    endpoint = 'report';  // HTML files use report endpoint
+                    break;
+                default:
+                    this.showError('Unknown file type');
+                    return;
+            }
+            
             if (!filename) {
                 this.showError('File not available for download');
                 return;
             }
 
-            const endpoint = type === 'dataset' ? 'dataset' : 'report';
             const response = await fetch(`${this.apiBaseUrl}/api/download/${endpoint}/${encodeURIComponent(filename)}`);
 
             if (!response.ok) {
@@ -287,6 +348,34 @@ class DataCleanerApp {
             this.showError('Download failed');
         }
     }
+
+    viewReport(type) {
+      let filename;
+      
+      switch(type) {
+          case 'report':
+              filename = this.reportFile;
+              break;
+          case 'visualizations':
+              filename = this.visualizationGallery;
+              break;
+          case 'comparison':
+              filename = this.comparisonReport;
+              break;
+          default:
+              this.showError('Unknown report type');
+              return;
+      }
+      
+      if (!filename) {
+          this.showError('Report not available');
+          return;
+      }
+      
+      // Open report inline in a new tab (no download prompt)
+      const url = `${this.apiBaseUrl}/api/download/view/report/${encodeURIComponent(filename)}`;
+      window.open(url, '_blank');
+  }
 
     switchSection(sectionId) {
         // Hide all sections
