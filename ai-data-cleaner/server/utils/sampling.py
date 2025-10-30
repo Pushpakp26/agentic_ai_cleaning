@@ -41,13 +41,35 @@ def profile_dataframe(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
 	return profile
 
 
+# def sample_per_column(df: pd.DataFrame, rows: int = SAMPLE_ROWS_PER_COLUMN) -> Dict[str, Any]:
+# 	"""Collect up to N non-null samples per column alongside profiles."""
+# 	samples: Dict[str, Any] = {}
+# 	for col in df.columns:
+# 		series = df[col].dropna()
+# 		samples[col] = series.sample(n=min(len(series), rows), random_state=42).tolist()
+# 	return {"profile": profile_dataframe(df), "samples": samples}
 def sample_per_column(df: pd.DataFrame, rows: int = SAMPLE_ROWS_PER_COLUMN) -> Dict[str, Any]:
-	"""Collect up to N non-null samples per column alongside profiles."""
-	samples: Dict[str, Any] = {}
-	for col in df.columns:
-		series = df[col].dropna()
-		samples[col] = series.sample(n=min(len(series), rows), random_state=42).tolist()
-	return {"profile": profile_dataframe(df), "samples": samples}
+    """Collect up to N non-null samples per column alongside profiles."""
+    MAX_TEXT_LEN = 300  # Limit text size for NLP columns
+
+    def truncate_text(val):
+        s = str(val)
+        return s[:MAX_TEXT_LEN] + "..." if len(s) > MAX_TEXT_LEN else s
+
+    samples: Dict[str, Any] = {}
+    for col in df.columns:
+        series = df[col].dropna()
+        n_samples = min(len(series), rows)
+
+        # Convert object columns to string and truncate for large text
+        if pd.api.types.is_object_dtype(series):
+            series = series.astype(str).apply(truncate_text)
+            n_samples = max(n_samples, min(len(series), 10))  # ensure at least 10 for text cols
+
+        samples[col] = series.sample(n=n_samples, random_state=42).tolist()
+
+    return {"profile": profile_dataframe(df), "samples": samples}
+
 
 
 def try_float(value):

@@ -10,3 +10,9 @@
 
 $env:HADOOP_HOME="C:\hadoop"
 $env:PATH="$env:HADOOP_HOME\bin;$env:PATH"
+
+
+
+
+remaining=
+work remianing for visualization part if our input is nlp

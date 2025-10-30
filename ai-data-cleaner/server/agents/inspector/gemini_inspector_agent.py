@@ -39,8 +39,11 @@ class GeminiInspectorAgent(InspectorAgent):
 
         try:
             prompt = self._create_analysis_prompt(inspection_data)
+            
+            
             # Log the prompt sent to Gemini for traceability (debug level to avoid noise)
             logger.debug("*************** GEMINI PROMPT (PANDAS) ***************\n%s\n***************************************************", prompt)
+            
             response = self._safe_generate_content(prompt)
             # Log raw Gemini response text so it is visible in console
             try:
@@ -162,8 +165,16 @@ Analyze the provided dataset and output ONLY valid JSON. Do not include any pros
    - text_clean: lowercase, remove special chars, numbers, and extra spaces. ONLY for long-form text columns (avg length > 20 chars). For short categorical columns (gender, status, etc.), use "skip" with reason "short categorical column".
    - remove_stopwords: remove common stopwords from text. ONLY for long-form text. Skip for categorical columns.
    - lemmatize: reduce words to their base form. ONLY for long-form text. Skip for categorical columns.
-   - tfidf: convert cleaned, lemmatized text into TF-IDF vectors. ONLY for long-form text (avg length > 50 chars). Skip for categorical columns.
-   - standardize_or_normalize_range: for numeric features choose "standardize" (z-score) by default; if model requires bounded range (e.g., [0,1]), use "normalize_range". Always include this step for numeric/numeric-ready columns.
+4b) NLP vs CATEGORICAL ENFORCEMENT:
+   - If a column is NLP (long-form text), you MUST include these steps in the defined order for that column:
+       ["text_clean", "remove_stopwords", "lemmatize", "tfidf"].
+   - If a column is NOT NLP (i.e., short categorical text), you MUST set these four steps to {"suggestion": "skip"} with a concise reason like "short categorical column" or "not NLP".
+   - Do NOT apply text steps to categorical columns. Prefer "categorical_encode" for such columns.
+
+4c) CATEGORICAL ENCODING ENFORCEMENT:
+   - If a column is CATEGORICAL (non-NLP short text), you MUST include the action "categorical_encode" (do not skip it).
+   - Choose strategy by cardinality: if unique_count <= 10 → "onehot" else → "label". Provide parameters accordingly.
+   - Do NOT propose text steps for categorical columns (enforced above). If model mistakenly suggests them, set them to "skip" with reason.
 
 5) Output schema (exact JSON format):
 {
@@ -184,6 +195,7 @@ Analyze the provided dataset and output ONLY valid JSON. Do not include any pros
    - Confirm there are no identifier-like columns included.
    - Confirm each useful column has 13 agent entries in the correct order.
    - Confirm final agent is present for each column; if missing, auto-add it and mark {"parameters": {"auto_fixed": true}}.
+   - Confirm that categorical columns include a "categorical_encode" step (with strategy). If missing, auto-add it with a justified strategy and mark {"parameters": {"auto_fixed": true}}.
    - If drop_constant is recommended for a column, still include the subsequent agents but mark them with "skip" where logically unnecessary (e.g., after a drop_constant recommendation include skip for handle_skewness with reason "column will be dropped").
 
 7) Minimal verbosity:
@@ -208,6 +220,57 @@ AVAILABLE_ACTIONS =
     "skip"
 
 
+
+8b) AGENT CAPABILITIES AND PARAM SCHEMAS (use exactly these parameter keys):
+   - fix_infinite:
+       parameters: { }
+       notes: Replaces +/-inf with NaN for numeric columns.
+   - fill_missing:
+       parameters: { "strategy": "auto" | "mean" | "median" | "mode" | "forward_fill" | "backward_fill" }
+       notes: If omitted, orchestrator may set defaults; prefer an explicit strategy.
+   - remove_outliers:
+       parameters: { "method": "remove_outliers", "outlier_strategy": "median" | "clip" | "nan" }
+       notes: Uses IQR bounds; choose how to handle detected outliers.
+   - deduplicate:
+       parameters: { "subset": ["<col>", ...] | null, "keep": "first" | "last" | false }
+       notes: If subset is null, duplicates are removed across all columns.
+   - drop_constant:
+       parameters: { }
+       notes: Drops columns with <= 1 unique value.
+   - handle_datetime:
+       parameters: { }
+       notes: Parses to datetime and extracts year, month, day, weekday, hour; drops original.
+   - handle_skewness:
+       parameters: { }
+       notes: If |skew| > 1, applies log1p (shifted if non-positive values present).
+   - categorical_encode:
+       parameters: { "method": "categorical_encode", "strategy": "onehot" | "label", "keep_original": bool }
+       notes:
+         • Do NOT invent new action names like "onehot" or "label_encode". Use action "categorical_encode" with strategy set accordingly.
+   - text_clean:
+       parameters: { "operations": [
+           "lowercase",
+           "remove_special_chars",
+           "remove_stopwords",
+           "strip_whitespace",
+           "remove_extra_spaces",
+           "remove_numbers"
+         ] }
+       notes:
+         • Choose a minimal sensible subset based on data (e.g., ["lowercase","remove_special_chars","strip_whitespace"]).
+   - remove_stopwords:
+       parameters: { }
+       notes: Only for long-form text columns.
+   - lemmatize:
+       parameters: { }
+       notes: Only for long-form text columns.
+   - tfidf:
+       parameters: { "max_features": <int, default 100> }
+       notes: Replaces the original text column with TF-IDF features.
+   - standardize:
+       parameters: { "method": "standard" }
+   - normalize_range:
+       parameters: { "method": "minmax" }
 
 Now, analyze the dataset columns, remove useless identifier-like columns, and produce the JSON described above, iterating every agent in the defined order for each useful column. BEFORE returning, run an internal check to ensure the final scaling agent (standardize or normalize_range) is present for each numeric or numeric-ready column; if absent, auto-add it and mark {"parameters": {"auto_fixed": true}}.
 """

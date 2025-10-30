@@ -460,6 +460,11 @@ class PipelineOrchestrator:
 				"handle_datetime": 60,
 				"handle_skewness": 70,
 				"categorical_encode": 80,
+				# Aliases for encoding to keep ordering consistent
+				"onehot": 80,
+				"onehot_encode": 80,
+				"label": 80,
+				"label_encode": 80,
 				"text_clean": 90,
 				"remove_stopwords": 100,
 				"lemmatize": 110,
@@ -481,11 +486,8 @@ class PipelineOrchestrator:
 
 				# Skip scaling/standardization for encoded categorical columns
 				if action["suggestion"] in ["standardize", "normalize_range"]:
-					if col in self.label_encoded_columns:
-						logger.info(f"Skipping {action['suggestion']} for label-encoded column '{col}' (categorical feature)")
-						continue
-					if col in self.onehot_encoded_columns:
-						logger.info(f"Skipping {action['suggestion']} for one-hot encoded column '{col}' (binary feature)")
+					if col in self.label_encoded_columns or col in self.onehot_encoded_columns:
+						logger.info(f"Skipping {action['suggestion']} for encoded column '{col}' (categorical feature)")
 						continue
 				
 				# Skip skewness handling for encoded categorical columns
@@ -514,8 +516,25 @@ class PipelineOrchestrator:
 							logger.info(f"Skipping skewness handling for binary column '{col}' (Spark)")
 							continue
 
+				# Normalize alias suggestions for encoding
+				suggestion = action.get("suggestion")
+				params = action.get("parameters", {})
+				if suggestion in ["onehot", "onehot_encode", "label", "label_encode"]:
+					# Convert to canonical action
+					original = suggestion
+					action["suggestion"] = "categorical_encode"
+					suggestion = "categorical_encode"
+					# Map alias to encoding strategy
+					params.setdefault("method", "categorical_encode")
+					if original in ["onehot", "onehot_encode"]:
+						params["strategy"] = "onehot"
+					else:
+						params["strategy"] = "label"
+					action["parameters"] = params
+					logger.info(f"Normalized alias suggestion '{original}' to 'categorical_encode' with strategy='{params['strategy']}' for column '{col}'")
+
 				# Select agent based on Spark usage
-				agent = self._get_agent_for_suggestion(action["suggestion"], col, use_spark=self.use_spark)
+				agent = self._get_agent_for_suggestion(suggestion, col, use_spark=self.use_spark)
 				if agent is None:
 					logger.warning(f"No agent found for suggestion '{action['suggestion']}' on column '{col}'")
 					continue
@@ -524,7 +543,7 @@ class PipelineOrchestrator:
 					# Validate data before processing
 					before_shape = self.current_df.shape if not self.use_spark else (self.current_df.count(), len(self.current_df.columns))
 
-					# Prepare parameters with proper method setting
+					# Prepare parameters with proper method setting (params may have been updated above)
 					params = action.get("parameters", {})
 
 					# Set method parameter for agents based on suggestion
@@ -563,6 +582,11 @@ class PipelineOrchestrator:
 						"normalize_range",
 						"standardize",
 						"categorical_encode",
+						# Include encoding aliases to ensure column existence checks
+						"onehot",
+						"onehot_encode",
+						"label",
+						"label_encode",
 						"text_clean",
 						"remove_stopwords",
 						"lemmatize",

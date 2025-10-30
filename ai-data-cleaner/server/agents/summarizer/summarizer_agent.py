@@ -33,6 +33,7 @@ class SummarizerAgent(BaseAgent):
 		report_data = {
 			"metadata": self._generate_metadata(df),
 			"data_overview": self._generate_data_overview(df),
+			"original_column_analysis": self._generate_original_column_analysis(inspection_results),
 			"column_analysis": self._generate_column_analysis(df),
 			"preprocessing_summary": self._generate_preprocessing_summary(suggestions, snapshots, applied_operations),
 			"quality_assessment": self._generate_quality_assessment(df),
@@ -108,6 +109,38 @@ class SummarizerAgent(BaseAgent):
 			analysis[col] = col_info
 		
 		return analysis
+
+	def _generate_original_column_analysis(self, inspection_results: Dict[str, Any]) -> Dict[str, Any]:
+		"""Reconstruct original column analysis from inspector profile."""
+		analysis = {}
+		try:
+			profile = (inspection_results or {}).get("profile", {})
+			for col, info in profile.items():
+				col_info = {
+					"dtype": str(info.get("dtype", "")),
+					"non_null": int(info.get("non_null", 0)),
+					"null_count": int(info.get("nulls", 0)),
+					"null_percentage": None,
+					"unique_count": int(info.get("unique_count", 0)),
+				}
+				if "min" in info and info.get("min") is not None:
+					col_info.update({
+						"mean": float(info.get("mean")) if info.get("mean") is not None else None,
+						"median": None,
+						"std": None,
+						"min": float(info.get("min")),
+						"max": float(info.get("max")) if info.get("max") is not None else None,
+					})
+				else:
+					# categorical-like summary if available
+					if info.get("sample_unique"):
+						# Use sample uniques as a proxy for top values
+						top_vals = {str(v): None for v in info.get("sample_unique", [])[:5]}
+						col_info["top_values"] = top_vals
+				analysis[col] = col_info
+		except Exception:
+			return {}
+		return analysis
 	
 	def _generate_preprocessing_summary(self, suggestions: Dict = None, snapshots: list = None, applied_operations: list = None) -> Dict[str, Any]:
 		"""Generate summary of preprocessing steps."""
@@ -122,6 +155,17 @@ class SummarizerAgent(BaseAgent):
 		# Prefer actual applied operations if provided
 		if applied_operations:
 			summary["applied_operations"] = list(applied_operations)
+			# Backfill missing reasons from suggestions if available
+			if suggestions:
+				for op in summary["applied_operations"]:
+					if not op.get("reason"):
+						col_actions = (suggestions or {}).get(op.get("column"), [])
+						if not isinstance(col_actions, list):
+							col_actions = [col_actions]
+						for act in col_actions:
+							if act.get("suggestion") == op.get("operation") and act.get("reason"):
+								op["reason"] = act.get("reason")
+								break
 		else:
 			# Fallback: derive from suggestions (legacy behavior)
 			for col, suggestion in (suggestions or {}).items():
@@ -286,28 +330,23 @@ class SummarizerAgent(BaseAgent):
                 <td>{summary}</td>
             </tr>
 """
-		
+
 		html += """
-        </table>
-        
-        <h2>⚙️ Preprocessing Summary</h2>
-        <div class="metric">
-            <p><strong>Total Suggestions:</strong> {total_suggestions}</p>
-            <p><strong>Applied Operations:</strong> {applied_count}</p>
-            <p><strong>Skipped Columns:</strong> {skipped_count}</p>
-        </div>
-        
-        <h3>Applied Operations:</h3>
-""".format(
-		total_suggestions=report_data['preprocessing_summary'].get('total_suggestions', 0),
-		applied_count=len(report_data['preprocessing_summary'].get('applied_operations', [])),
-		skipped_count=len(report_data['preprocessing_summary'].get('skipped_columns', []))
-	)
-	
+		</table>
+		
+		<h2>⚙️ Preprocessing Summary</h2>
+		<div class="metric">
+			<p><strong>Total Suggestions:</strong> {total_suggestions}</p>
+			<p><strong>Applied Operations:</strong> {applied_count}</p>
+			<p><strong>Skipped Columns:</strong> {skipped_count}</p>
+		</div>
+		"""
+		
+		# Render applied operations with reasons
 		for op in report_data['preprocessing_summary'].get('applied_operations', []):
 			html += f"""
 			<div class="operation">
-				<strong>{op.get('column', '')}:</strong> {op.get('operation', '')} - {op.get('reason', '')}
+				<strong>{op.get('column', '')}:</strong> {op.get('operation', '')} - {op.get('reason', 'No reason provided')}
 			</div>
 			"""
 		
