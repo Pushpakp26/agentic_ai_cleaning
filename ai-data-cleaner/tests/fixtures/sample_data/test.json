@@ -1,0 +1,11 @@
+{
+  "users": [
+    {"id": 1, "name": "Alice", "active": true, "score": 85.5},
+    {"id": 2, "name": "Bob", "active": false, "score": 92.1},
+    {"id": 3, "name": "Charlie", "active": true, "score": null}
+  ],
+  "metadata": {
+    "version": "1.0",
+    "created": "2024-01-01"
+  }
+}

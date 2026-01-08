@@ -1,0 +1,33 @@
+# Large data directories
+ai-data-cleaner/logs/
+ai-data-cleaner/processed_data/
+ai-data-cleaner/uploads/
+ai-data-cleaner/snapshots/
+
+# Development files
+.git/
+.github/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+htmlcov/
+.coverage
+.env
+.venv/
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Test files (exclude from production)
+ai-data-cleaner/tests/
+ai-data-cleaner/requirements-test.txt
+
+# Build artifacts
+uv.lock
+pyproject.toml
+notes
+setup_spark_env.ps1
+start_server.py
