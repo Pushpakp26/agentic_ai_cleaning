@@ -116,13 +116,15 @@ spec:
     
     post {
         always {
+            container('python') {
+                // Change ownership of everything to the jenkins user (uid 1000) 
+                // so Jenkins can delete it without "Permission Denied"
+                sh 'chown -R 1000:1000 .'
+            }
             deleteDir()
         }
         success {
-            echo "✅ Build ${BUILD_NUMBER} succeeded! Image: ${DOCKER_HUB_REPO}:${IMAGE_TAG}"
-        }
-        failure {
-            echo "❌ Build ${BUILD_NUMBER} failed."
+            echo "✅ Build ${BUILD_NUMBER} succeeded! ArgoCD is now deploying image: ${IMAGE_TAG}"
         }
     }
 }
