@@ -31,6 +31,8 @@ spec:
         IMAGE_TAG = "${BUILD_NUMBER}-${GIT_COMMIT.take(7)}"
         DOCKER_HUB_CREDENTIALS = credentials('dockerhub-credentials')
         GITOPS_REPO = 'https://github.com/Pushpakp26/ai-data-cleaner-gitops.git'
+        // Prevents root-owned __pycache__ folders from breaking deleteDir()
+        PYTHONDONTWRITEBYTECODE = '1'
     }
     
     stages {
@@ -44,23 +46,19 @@ spec:
             steps {
                 container('python') {
                     sh '''
-                        # 1. Install all required test libraries
+                        # Install all required test libraries
                         pip install pytest pytest-asyncio pytest-mock flake8 pandas numpy fastapi httpx
                         
-                        # 2. Check and Run Tests
-                        # Looking inside ai-data-cleaner/tests based on your structure
+                        # Check and Run Tests
                         if [ -d "ai-data-cleaner/tests" ]; then
-                            python -m pytest ai-data-cleaner/tests/ -v --junitxml=test-results.xml -p no:cacheprovider || true
+                            python -m pytest ai-data-cleaner/tests/ -v --junitxml=test-results.xml || true
                         else
-                            echo "No tests directory found, creating dummy result"
-                            echo '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" tests="0" failures="0" errors="0" time="0.0"></testsuite></testsuites>' > test-results.xml
+                            echo '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" tests="0"></testsuite></testsuites>' > test-results.xml
                         fi
                         
-                        # 3. Check and Run Linting
+                        # Run linting
                         if [ -d "ai-data-cleaner/server" ]; then
                             python -m flake8 ai-data-cleaner/server/ --output-file=flake8-report.txt || true
-                        else
-                            echo "No server directory found" > flake8-report.txt
                         fi
                     '''
                 }
@@ -76,15 +74,13 @@ spec:
             steps {
                 container('docker') {
                     script {
-                        // Building from the root workspace so the Dockerfile can access all files
+                        // Build using the socket mount to the host Docker daemon
                         sh "docker build -t ${DOCKER_HUB_REPO}:${IMAGE_TAG} -f ai-data-cleaner/Dockerfile ."
 
                         withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
                             sh "echo ${PASS} | docker login -u ${USER} --password-stdin"
                             sh "docker push ${DOCKER_HUB_REPO}:${IMAGE_TAG}"
                         }
-
-                        writeFile file: 'image-tag.txt', text: IMAGE_TAG
                     }
                 }
             }
@@ -94,9 +90,12 @@ spec:
             steps {
                 container('python') {
                     script {
-                        withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                        withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
                             sh """
-                                git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Pushpakp26/ai-data-cleaner-gitops.git gitops-repo
+                                # Install git (missing in slim image)
+                                apt-get update && apt-get install -y git
+                                
+                                git clone https://${GIT_USER}:${GIT_PASS}@github.com/Pushpakp26/ai-data-cleaner-gitops.git gitops-repo
                                 cd gitops-repo
                                 
                                 # Update image tag in deployment.yaml
@@ -118,6 +117,12 @@ spec:
     post {
         always {
             deleteDir()
+        }
+        success {
+            echo "✅ Build ${BUILD_NUMBER} succeeded! Image: ${DOCKER_HUB_REPO}:${IMAGE_TAG}"
+        }
+        failure {
+            echo "❌ Build ${BUILD_NUMBER} failed."
         }
     }
 }
