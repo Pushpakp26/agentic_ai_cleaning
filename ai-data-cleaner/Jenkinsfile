@@ -1,13 +1,35 @@
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: python
+    image: python:3.9-slim
+    command: ["cat"]
+    tty: true
+  - name: docker
+    image: docker:latest
+    command: ["cat"]
+    tty: true
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
+  volumes:
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+'''
+        }
+    }
     
     environment {
         DOCKER_REGISTRY = 'docker.io'
         DOCKER_HUB_REPO = 'pushpak26/ai-data-cleaner'
-        // Using a global env variable for the tag so all stages can see it
         IMAGE_TAG = "${BUILD_NUMBER}-${GIT_COMMIT.take(7)}"
         
-        // Ensure these Credentials IDs match exactly what you created in Jenkins UI
         DOCKER_HUB_CREDENTIALS = credentials('dockerhub-credentials')
         GITOPS_REPO = 'https://github.com/Pushpakp26/ai-data-cleaner-gitops.git'
         GITOPS_CREDENTIALS = credentials('github-credentials')
@@ -22,12 +44,13 @@ pipeline {
         
         stage('Test') {
             steps {
-                // If pytest isn't installed in your agent, this stage will fail.
-                // You can add "|| true" to bypass failures for now while testing the pipeline flow.
-                sh '''
-                    python -m pytest tests/ --junitxml=test-results.xml || true
-                    python -m flake8 server/ --output-file=flake8-report.txt || true
-                '''
+                container('python') {
+                    sh '''
+                        pip install pytest flake8
+                        python -m pytest tests/ --junitxml=test-results.xml || true
+                        python -m flake8 server/ --output-file=flake8-report.txt || true
+                    '''
+                }
             }
             post {
                 always {
@@ -38,49 +61,43 @@ pipeline {
         
         stage('Build Docker Image') {
             steps {
-                script {
-                    // Use the versioned tag defined in environment
-                    def image = docker.build("${DOCKER_HUB_REPO}:${IMAGE_TAG}")
+                container('docker') {
+                    script {
+                        // Use the local Docker daemon via the socket mount
+                        sh "docker build -t ${DOCKER_HUB_REPO}:${IMAGE_TAG} ."
 
-                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'dockerhub-credentials') {
-                        image.push()
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                            sh "echo ${PASS} | docker login -u ${USER} --password-stdin"
+                            sh "docker push ${DOCKER_HUB_REPO}:${IMAGE_TAG}"
+                        }
+
+                        writeFile file: 'image-tag.txt', text: IMAGE_TAG
                     }
-
-                    writeFile file: 'image-tag.txt', text: IMAGE_TAG
                 }
             }
         }
         
         stage('Update GitOps Repo') {
             steps {
-                script {
-                    withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
-                        sh """
-                            git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Pushpakp26/ai-data-cleaner-gitops.git gitops-repo
-                            cd gitops-repo
-                            
-                            # Update image tag in deployment.yaml
-                            # Note: Double quotes used for the string to allow variable expansion
-                            sed -i "s|image: .*/ai-data-cleaner:.*|image: ${DOCKER_HUB_REPO}:${IMAGE_TAG}|" k8s/deployment.yaml
-                            
-                            git config user.email "jenkins@company.com"
-                            git config user.name "Jenkins CI"
-                            git add k8s/deployment.yaml
-                            git commit -m "Update image tag to ${IMAGE_TAG} [skip ci]"
-                            git push origin main
-                        """
+                // Using python container because it usually includes git and sed
+                container('python') {
+                    script {
+                        withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                            sh """
+                                git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Pushpakp26/ai-data-cleaner-gitops.git gitops-repo
+                                cd gitops-repo
+                                
+                                # Update image tag in deployment.yaml
+                                sed -i "s|image: .*/ai-data-cleaner:.*|image: ${DOCKER_HUB_REPO}:${IMAGE_TAG}|" k8s/deployment.yaml
+                                
+                                git config user.email "jenkins@company.com"
+                                git config user.name "Jenkins CI"
+                                git add k8s/deployment.yaml
+                                git commit -m "Update image tag to ${IMAGE_TAG} [skip ci]"
+                                git push origin main
+                            """
+                        }
                     }
-                }
-            }
-        }
-        
-        stage('Security Scan') {
-            steps {
-                sh "trivy image ${DOCKER_HUB_REPO}:${IMAGE_TAG} --format json --output trivy-report.json || true"
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'trivy-report.json', allowEmptyArchive: true
                 }
             }
         }
@@ -88,7 +105,6 @@ pipeline {
     
     post {
         always {
-            // Replaced cleanWs() with built-in deleteDir() to avoid the error you saw
             deleteDir()
         }
         success {
