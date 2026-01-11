@@ -44,16 +44,19 @@ spec:
             steps {
                 container('python') {
                     sh '''
-                        pip install pytest flake8
-                        # Check if tests exist, if not skip
+                        # 1. Install all required test libraries
+                        pip install pytest pytest-asyncio pytest-mock flake8 pandas numpy fastapi httpx
+                        
+                        # 2. Check and Run Tests
+                        # Looking inside ai-data-cleaner/tests based on your structure
                         if [ -d "ai-data-cleaner/tests" ]; then
                             python -m pytest ai-data-cleaner/tests/ -v --junitxml=test-results.xml -p no:cacheprovider || true
                         else
-                            echo "No tests directory found, skipping tests"
+                            echo "No tests directory found, creating dummy result"
                             echo '<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" tests="0" failures="0" errors="0" time="0.0"></testsuite></testsuites>' > test-results.xml
                         fi
                         
-                        # Run flake8 on server directory
+                        # 3. Check and Run Linting
                         if [ -d "ai-data-cleaner/server" ]; then
                             python -m flake8 ai-data-cleaner/server/ --output-file=flake8-report.txt || true
                         else
@@ -73,11 +76,8 @@ spec:
             steps {
                 container('docker') {
                     script {
-                        // Build from the correct directory
-                        sh """
-                            cd ai-data-cleaner
-                            docker build -f Dockerfile -t ${DOCKER_HUB_REPO}:${IMAGE_TAG} ..
-                        """
+                        // Building from the root workspace so the Dockerfile can access all files
+                        sh "docker build -t ${DOCKER_HUB_REPO}:${IMAGE_TAG} -f ai-data-cleaner/Dockerfile ."
 
                         withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
                             sh "echo ${PASS} | docker login -u ${USER} --password-stdin"
@@ -118,13 +118,6 @@ spec:
     post {
         always {
             deleteDir()
-        }
-        success {
-            echo "✅ AI Data Cleaner build ${BUILD_NUMBER} succeeded!"
-            echo "🐳 Docker image: ${DOCKER_HUB_REPO}:${IMAGE_TAG}"
-        }
-        failure {
-            echo "❌ AI Data Cleaner build ${BUILD_NUMBER} failed!"
         }
     }
 }
