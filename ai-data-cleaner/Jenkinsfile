@@ -38,23 +38,24 @@ spec:
     stages {
         stage('Checkout') {
             steps {
+                // Explicitly calling checkout scm
                 checkout scm
             }
         }
-        
+
         stage('Test') {
             steps {
                 container('python') {
                     sh '''
                         pip install pytest flake8
-                        python -m pytest tests/ --junitxml=test-results.xml || true
+                        python -m pytest tests/ -v --junitxml=test-results.xml -p no:cacheprovider || true
                         python -m flake8 server/ --output-file=flake8-report.txt || true
                     '''
                 }
             }
             post {
                 always {
-                    junit 'test-results.xml'
+                    junit allowEmptyResults: true, testResults: 'test-results.xml'
                 }
             }
         }
@@ -79,7 +80,6 @@ spec:
         
         stage('Update GitOps Repo') {
             steps {
-                // Using python container because it usually includes git and sed
                 container('python') {
                     script {
                         withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
@@ -109,7 +109,6 @@ spec:
         }
         success {
             echo "✅ AI Data Cleaner build ${BUILD_NUMBER} succeeded!"
-            echo "🐳 Docker image: ${DOCKER_HUB_REPO}:${IMAGE_TAG}"
         }
         failure {
             echo "❌ AI Data Cleaner build ${BUILD_NUMBER} failed!"
