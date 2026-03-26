@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 
 # Set environment variables
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
-ENV SPARK_VERSION=4.0.1
+ENV SPARK_VERSION=3.5.3
 ENV HADOOP_VERSION=3
 ENV SPARK_HOME=/opt/spark
 ENV HADOOP_HOME=/opt/hadoop
