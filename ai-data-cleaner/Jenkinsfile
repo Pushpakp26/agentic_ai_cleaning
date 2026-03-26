@@ -11,7 +11,8 @@ spec:
     command: ["cat"]
     tty: true
   - name: docker
-    image: docker:latest
+    image: docker:24
+    imagePullPolicy: IfNotPresent
     command: ["cat"]
     tty: true
     volumeMounts:
